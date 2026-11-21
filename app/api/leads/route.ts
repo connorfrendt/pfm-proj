@@ -1,3 +1,5 @@
+import { sql } from "@/lib/db";
+
 const ALLOWED_ATTRIBUTION_KEYS = [
     "utm_source",
     "utm_medium",
@@ -59,10 +61,20 @@ export async function POST(request: Request) {
         }
     }
 
-    // TODO: save the lead to the database (next up)
+    try {
+        const rows = await sql`
+            INSERT INTO leads (name, email, phone, attribution)
+            VALUES (${name}, ${email}, ${phoneDigits}, ${JSON.stringify(attribution)}::jsonb)
+            RETURNING id
+        `;
+        // The above is not string concatenation. The driver sends each ${...} as a separate param,
+        // so malicious names like "; DROP TABLE leads;" is stored as plain text and never executed
 
-    return Response.json({
-        ok: true,
-        attributionKeys: Object.keys(attribution),
-    });
+        return Response.json({ ok: true, leadId: rows[0].id});
+    }
+    catch {
+        return Response.json({ error: "Could not save lead" }, { status: 500 });
+        // try/catch returns a generic 500. DB errors can leak table names and internals,
+        // so detail goes in server logs, not in the response
+    }
 }
