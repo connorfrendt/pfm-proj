@@ -25,6 +25,8 @@ export default function LeadForm() {
     const [email, setEmail] = useState("");
     const [phoneNumber, setPhoneNumber] = useState("");
     const [attribution, setAttribution] = useState<Attribution>({});
+    const [status, setStatus] = useState<"idle" | "sending" | "success" | "error">("idle");
+    const [errors, setErrors] = useState<Record<string, string>>({});
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -44,6 +46,30 @@ export default function LeadForm() {
             if(saved) setAttribution(JSON.parse(saved));
         }
     }, []);
+
+    async function handleSubmit() {
+        setStatus("sending");
+        setErrors({});
+
+        try {
+            const response = await fetch("/api/leads", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name, email, phoneNumber, attribution }),
+            });
+            const data = await response.json();
+
+            if(!response.ok) {
+                setErrors(data.errors ?? {});
+                setStatus("error");
+                return;
+            }
+            setStatus("success");
+        }
+        catch {
+            setStatus("error");
+        }
+    }
 
     return (
         <div>
@@ -89,6 +115,14 @@ export default function LeadForm() {
                     <h3>Your email: {email}</h3>
                     <h3>Your phone number: {phoneNumber}</h3>
                     <pre>{JSON.stringify(attribution, null, 2)}</pre>
+                    
+                    <button onClick={handleSubmit} disabled={status === "sending"}>
+                        Submit
+                    </button>
+                    {Object.values(errors).map((message) => (
+                        <p key={message}>{message}</p>
+                    ))}
+                    {status === "success" && <p>Thanks! We got your info.</p>}
                 </>
             )}
 
