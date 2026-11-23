@@ -99,7 +99,18 @@ export default async function DebugContent({
                         </p>
                         <p>Attribution: {JSON.stringify(lead.attribution)}</p>
 
-                        
+                        <h3 className="mt-2 font-medium">
+                            Delivery: {lead.delivery_status}
+                        </h3>
+                        <ul>
+                            {leadAttempts.map((a) => (
+                                <li key={a.attempt}>
+                                    Attempt {a.attempt}: {a.ok ? "OK" : "FAILED"} ·{" "}
+                                    {a.status_code ?? "no response"} · {a.duration_ms}ms
+                                    {a.error ? ` · ${a.error}` : ""}
+                                </li>
+                            ))}
+                        </ul>
 
                         <h3 className="mt-2 font-medium">Conversion Events</h3>
                         {leadEvents.length === 0 ? (
