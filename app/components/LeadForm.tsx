@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import { validateLead } from "@/lib/validation";
 
 const TRACKED_PARAMS = [
     "utm_source",
@@ -94,7 +95,25 @@ export default function LeadForm() {
 
     function handleFormSubmit(event: FormEvent<HTMLFormElement>) {
         event.preventDefault();
+        
+        const allErrors = validateLead({ name, email, phoneNumber });
+        const fieldsOnThisStep = 
+            step === 1
+                ? ["name"]
+                : step === 2
+                    ? ["email", "phoneNumber"]
+                    : ["name", "email", "phoneNumber"];
+        
+        const stepErrors: Record<string, string> = {};
+        for(const field of fieldsOnThisStep) {
+            if(allErrors[field]) stepErrors[field] = allErrors[field];
+        }
+
+        setErrors(stepErrors);
+        if(Object.keys(stepErrors).length > 0) return;
+
         if(step < 3) setStep(step + 1);
+
         else handleSubmit();
     }
 
@@ -117,6 +136,7 @@ export default function LeadForm() {
     return (
         <form
             onSubmit={handleFormSubmit}
+            noValidate
             className="mx-auto w-full max-w-md rounded-2xl bg-white p-6 text-slate-900 shadow-lg sm:p-8"
         >
             <p className="text-sm font-medium text-slate-500">Step {step} of 3</p>

@@ -3,6 +3,7 @@ import { after } from "next/server";
 import { deliverLead } from "@/lib/deliver";
 import { cleanAttribution } from "@/lib/attribution";
 import { UUID_RE, hashEmail, sendServerEvent } from "@/lib/events";
+import { validateLead } from "@/lib/validation";
 
 type LeadInput = {
     name?: unknown;
@@ -31,17 +32,7 @@ export async function POST(request: Request) {
         ? body.eventId
         : null;
 
-    const errors: Record<string, string> = {};
-
-    if(name.length < 2 || name.length > 100) {
-        errors.name = "Enter your full name";
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
-        errors.email = "Enter a valid email address";
-    }
-    if(phoneDigits.length !== 10) {
-        errors.phoneNumber = "Enter a 10-digit US phone number";
-    }
+    const errors = validateLead({ name, email, phoneNumber });
 
     if(Object.keys(errors).length > 0) {
         return Response.json({ errors }, { status: 400 });
