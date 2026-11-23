@@ -10,6 +10,8 @@ export async function deliverLead(
     buyerUrl: string,
     payload: object,
 ) {
+    const secret = process.env.BUYER_WEBHOOK_SECRET;
+
     for(let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         const started = Date.now();
         let statusCode: number | null = null;
@@ -19,7 +21,10 @@ export async function deliverLead(
         try{
             const response = await fetch(buyerUrl, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
+                },
                 body: JSON.stringify(payload),
                 signal: AbortSignal.timeout(5000),
             });
