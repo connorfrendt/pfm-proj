@@ -1,23 +1,15 @@
 import { sql } from "@/lib/db";
-
-const ALLOWED_ATTRIBUTION_KEYS = [
-    "utm_source",
-    "utm_medium",
-    "utm_campaign",
-    "utm_content",
-    "utm_term",
-    "gclid",
-    "fbclid",
-    "ttclid",
-    "msclkid",
-];
-const MAX_VALUE_LENGTH = 200;
+import { after } from "next/server";
+import { deliverLead } from "@/lib/deliver";
+import { cleanAttribution } from "@/lib/attribution";
+import { UUID_RE, hashEmail, sendServerEvent } from "@/lib/events";
 
 type LeadInput = {
     name?: unknown;
     email?: unknown;
     phoneNumber?: unknown;
     attribution?: unknown;
+    eventId?: unknown;
 };
 
 export async function POST(request: Request) {
@@ -33,6 +25,11 @@ export async function POST(request: Request) {
     const email = typeof body.email === "string" ? body.email.trim() : "";
     const phoneNumber = typeof body.phoneNumber === "string" ? body.phoneNumber : "";
     const phoneDigits = phoneNumber.replace(/\D/g, "");
+
+    const eventId =
+        typeof body.eventId === "string" && UUID_RE.test(body.eventId)
+        ? body.eventId
+        : null;
 
     const errors: Record<string, string> = {};
 
@@ -50,29 +47,55 @@ export async function POST(request: Request) {
         return Response.json({ errors }, { status: 400 });
     }
 
-    const attribution: Record<string, string> = {};
-    if(typeof body.attribution === "object" && body.attribution !== null) {
-        const raw = body.attribution as Record<string, unknown>;
-        for(const key of ALLOWED_ATTRIBUTION_KEYS) {
-            const value = raw[key];
-            if(typeof value === "string" && value.length > 0) {
-                attribution[key] = value.slice(0, MAX_VALUE_LENGTH);
-            }
-        }
-    }
+    const attribution = cleanAttribution(body.attribution);
 
     try {
         const rows = await sql`
-            INSERT INTO leads (name, email, phone, attribution)
-            VALUES (${name}, ${email}, ${phoneDigits}, ${JSON.stringify(attribution)}::jsonb)
+            INSERT INTO leads (name, email, phone, attribution, event_id)
+            VALUES (${name}, ${email}, ${phoneDigits}, ${JSON.stringify(attribution)}::jsonb, ${eventId})
             RETURNING id
         `;
         // The above is not string concatenation. The driver sends each ${...} as a separate param,
         // so malicious names like "; DROP TABLE leads;" is stored as plain text and never executed
 
-        return Response.json({ ok: true, leadId: rows[0].id});
+        const leadId = rows[0].id;
+        const buyerUrl = process.env.BUYER_WEBHOOK_URL ?? new URL("/api/mock-buyer", request.url).toString();
+
+        after(() =>
+            deliverLead(leadId, buyerUrl, {
+                leadId,
+                name,
+                email,
+                phone: phoneDigits,
+                attribution,
+            })
+        );
+
+        if(eventId) {
+            const platformUrl = new URL(
+                "/api/mock-platform/events",
+                request.url
+            ).toString();
+            
+            after(() =>
+                sendServerEvent(platformUrl, {
+                    eventId,
+                    eventName: "Lead",
+                    source: "server",
+                    hashedEmail: hashEmail(email),
+                    clickIds: attribution,
+                })
+            );
+        }
+
+
+        return Response.json({ ok: true, leadId });
     }
-    catch {
+    catch(error) {
+        console.error(
+            "Lead save failed: ",
+            error instanceof Error ? error.message : error
+        )
         return Response.json({ error: "Could not save lead" }, { status: 500 });
         // try/catch returns a generic 500. DB errors can leak table names and internals,
         // so detail goes in server logs, not in the response

@@ -48,6 +48,7 @@ export default function LeadForm() {
     }, []);
 
     async function handleSubmit() {
+        const eventId = crypto.randomUUID();
         setStatus("sending");
         setErrors({});
 
@@ -55,7 +56,7 @@ export default function LeadForm() {
             const response = await fetch("/api/leads", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name, email, phoneNumber, attribution }),
+                body: JSON.stringify({ name, email, phoneNumber, attribution, eventId }),
             });
             const data = await response.json();
 
@@ -64,6 +65,19 @@ export default function LeadForm() {
                 setStatus("error");
                 return;
             }
+
+            fetch("/api/mock-platform/events", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    eventId,
+                    eventName: "Lead",
+                    source: "browser",
+                    clickIds: attribution,
+                }),
+                keepalive: true,
+            }).catch(() => {});
+
             setStatus("success");
         }
         catch {
