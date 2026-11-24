@@ -13,6 +13,8 @@ const TRACKED_PARAMS = [
     "fbclid",
     "ttclid",
     "msclkid",
+    "aff_id",
+    "sub_id",
 ];
 
 const inputClass = "mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-600/30";
@@ -42,13 +44,28 @@ export default function LeadForm() {
             if(value) found[key] = value;
         }
 
-        if(Object.keys(found).length > 0) {
+        const saved = sessionStorage.getItem("attribution");
+
+        if(Object.keys(found).length > 0 || !saved) {
+            found.landing_path = window.location.pathname;
+
+            if(document.referrer) {
+                try {
+                    const referrerUrl = new URL(document.referrer);
+                    if(referrerUrl.origin !== window.location.origin) {
+                        found.referrer = referrerUrl.origin;
+                    }
+                }
+                catch {
+                    // ignore a malformed referrer
+                }
+            }
+
             sessionStorage.setItem("attribution", JSON.stringify(found));
             setAttribution(found);
         }
         else {
-            const saved = sessionStorage.getItem("attribution");
-            if(saved) setAttribution(JSON.parse(saved));
+            setAttribution(JSON.parse(saved));
         }
     }, []);
 

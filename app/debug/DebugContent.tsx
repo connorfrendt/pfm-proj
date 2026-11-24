@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { timingSafeEqual } from "node:crypto";
 import { sql } from "@/lib/db";
+import { ReactNode } from "react";
 
 type Lead = {
     id: string,
@@ -48,6 +49,43 @@ function maskPhone(phone: string) {
     return `***-***-${phone.slice(-4)}`;
 }
 
+const timeFormat = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    fractionalSecondDigits: 3,
+    hour12: false,
+});
+
+function formatTime(value: string | Date) {
+    return timeFormat.format(new Date(value));
+}
+
+const tones = {
+    green: "bg-green-100 text-green-800",
+    red: "bg-red-100 text-red-800",
+    amber: "bg-amber-100 text-amber-800",
+    slate: "bg-slate-200 text-slate-700"
+};
+type Tone = keyof typeof tones;
+
+function Badge({ tone, children}: { tone: Tone; children: ReactNode }) {
+    return (
+        <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${tones[tone]}`}>
+            {children}
+        </span>
+    )
+}
+
+function deliveryTone(status: string): Tone {
+    if(status === "delivered") return "green";
+    if(status === "failed") return "red";
+    return "amber";
+}
+
 export default async function DebugContent({
     searchParams,
 }: {
@@ -78,57 +116,171 @@ export default async function DebugContent({
         ORDER BY received_at
     `) as ConversionEvent[];
 
+    const attemptsFor = (leadId: string) => attempts.filter((a) => String(a.lead_id) === String(leadId));
+
+    const stats = [
+        {
+            label: "Delivered",
+            value: leads.filter((l) => l.delivery_status === "delivered").length,
+        },
+        {
+            label: "Failed",
+            value: leads.filter((l) => l.delivery_status === "failed").length,
+        },
+        {
+            label: "Needed retries",
+            value: leads.filter((l) => attemptsFor(l.id).length > 1).length,
+        },
+        {
+            label: "Duplicate events caught",
+            value: events.filter((e) => !e.counted).length,
+        },
+    ];
+
     return (
-        <main className="mx-auto max-w-3xl p-6">
-            <h1 className="mb-6 text-2xl font-semibold">Lead Debug View</h1>
+        <main className="min-h-screen bg-slate-100 px-4 py-8 text-slate-900">
+            <div className="mx-auto max-w-4xl">
+                <header className="mb-6">
+                    <h1 className="text-2xl font-bold">Lead Debug View</h1>
+                    <p className="text-sm text-slate-600">
+                        Latest {leads.length} leads · contact info masked · times in
+                        Pacific
+                    </p>
+                </header>
 
-            {leads.map((lead) => {
-                const leadAttempts = attempts.filter(
-                    (a) => String(a.lead_id) === String(lead.id)
-                );
-                const leadEvents = events.filter((e) => e.event_id === lead.event_id);
+                <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {stats.map((stat) => (
+                        <div
+                            key={stat.label}
+                            className="rounded-xl bg-white p-4 shadow-sm"
+                        >
+                            <p className="text-2xl font-bold">{stat.value}</p>
+                            <p className="text-xs text-slate-500">{stat.label}</p>
+                        </div>
+                    ))}
+                </div>
 
-                return (
-                    <section key={lead.id} className="mb-4 rounded border p-4">
-                        <h2 className="font-medium">
-                            Lead #{lead.id} · {new Date(lead.created_at).toISOString()}
-                        </h2>
-                        <p>
-                            {lead.name.split(" ")[0]} · {maskEmail(lead.email)} ·{" "}
-                            {maskPhone(lead.phone)}
-                        </p>
-                        <p>Attribution: {JSON.stringify(lead.attribution)}</p>
+                <div className="space-y-4">
+                    {leads.map((lead) => {
+                        const leadAttempts = attemptsFor(lead.id);
+                        const leadEvents = events.filter(
+                            (e) => e.event_id === lead.event_id
+                        );
+                        const attributionEntries = Object.entries(lead.attribution);
 
-                        <h3 className="mt-2 font-medium">
-                            Delivery: {lead.delivery_status}
-                        </h3>
-                        <ul>
-                            {leadAttempts.map((a) => (
-                                <li key={a.attempt}>
-                                    Attempt {a.attempt}: {a.ok ? "OK" : "FAILED"} ·{" "}
-                                    {a.status_code ?? "no response"} · {a.duration_ms}ms
-                                    {a.error ? ` · ${a.error}` : ""}
-                                </li>
-                            ))}
-                        </ul>
+                        return(
+                            <section
+                                key={lead.id}
+                                className="rounded-xl bg-white p-5 shadow-sm"
+                            >
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <h2 className="text-lg font-semibold">
+                                        Lead #{lead.id}
+                                    </h2>
+                                    <Badge tone={deliveryTone(lead.delivery_status)}>
+                                        {lead.delivery_status}
+                                    </Badge>
+                                </div>
+                                <p className="text-sm text-slate-500">
+                                    {formatTime(lead.created_at)}
+                                </p>
+                                <p className="mt-2 text-sm">
+                                    {lead.name.split(" ")[0]} ·{" "}
+                                    {maskEmail(lead.email)} · {maskPhone(lead.phone)}
+                                </p>
 
-                        <h3 className="mt-2 font-medium">Conversion Events</h3>
-                        {leadEvents.length === 0 ? (
-                            <p>None</p>
-                        ): (
-                            <ul>
-                                {leadEvents.map((e, i) => (
-                                    <li key={i}>
-                                        {e.source} ·{" "}
-                                        {new Date(e.received_at).toISOString()} ·{" "}
-                                        {e.counted ? "COUNTED" : "duplicate"}
-                                    </li>
-                                ))}
-                            </ul>
-                        )}
-                    </section>
-                );
-            })}
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    {attributionEntries.length === 0 ? (
+                                        <span className="text-xs text-slate-400">
+                                            No attribution captured
+                                        </span>
+                                    ) : (
+                                        attributionEntries.map(([key, value]) => (
+                                            <span
+                                                key={key}
+                                                title={value}
+                                                className="max-w-full break-all rounded-md bg-slate-100 px-2 py-1 text-xs"
+                                            >
+                                                <span className="text-slate-500">
+                                                    {key}
+                                                </span>{" "}
+                                                {value}
+                                            </span>
+                                        ))
+                                    )}
+                                </div>
+
+                                <div className="mt-4 grid gap-4 border-t border-slate-100 pt-4 md:grid-cols-2">
+                                    <div>
+                                        <h3 className="mb-2 text-sm font-semibold">
+                                            Delivery attempts
+                                        </h3>
+                                        <ol className="space-y-2 text-sm">
+                                            {leadAttempts.map((a) => (
+                                                <li
+                                                    key={a.attempt}
+                                                    className="flex flex-wrap items-center gap-2"
+                                                >
+                                                    <span className="text-slate-500">
+                                                        #{a.attempt}
+                                                    </span>
+                                                    <Badge tone={a.ok ? "green" : "red"}>
+                                                        {a.status_code ?? "no response"}
+                                                    </Badge>
+                                                    <span className="text-slate-500">
+                                                        {a.duration_ms}ms
+                                                    </span>
+                                                    {a.error && (
+                                                        <span className="text-red-600">
+                                                            {a.error}
+                                                        </span>
+                                                    )}
+                                                </li>
+                                            ))}
+                                        </ol>
+                                    </div>
+
+                                    <div>
+                                        <h3 className="mb-2 text-sm font-semibold">
+                                            Conversion events
+                                        </h3>
+                                        {leadEvents.length === 0 ? (
+                                            <p className="text-sm text-slate-400">None</p>
+                                        ) : (
+                                            <ul className="space-y-2 text-sm">
+                                                {leadEvents.map((e, i) => (
+                                                    <li
+                                                        key={i}
+                                                        className="flex flex-wrap items-center gap-2"
+                                                    >
+                                                        <Badge tone="slate">
+                                                            {e.source}
+                                                        </Badge>
+                                                        <span className="text-slate-500">
+                                                            {formatTime(e.received_at)}
+                                                        </span>
+                                                        <Badge
+                                                            tone={
+                                                                e.counted
+                                                                    ? "green"
+                                                                    : "amber"
+                                                            }
+                                                        >
+                                                            {e.counted
+                                                                ? "counted"
+                                                                : "duplicate"}
+                                                        </Badge>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </div>
+                                </div>
+                            </section>
+                        )
+                    })}
+                </div>
+            </div>
         </main>
-    );
+    )
 }

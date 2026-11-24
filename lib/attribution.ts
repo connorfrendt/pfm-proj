@@ -8,6 +8,10 @@ export const ALLOWED_ATTRIBUTION_KEYS = [
     "fbclid",
     "ttclid",
     "msclkid",
+    "aff_id",
+    "sub_id",
+    "referrer",
+    "landing_path",
 ]
 const MAX_VALUE_LENGTH = 200;
 
