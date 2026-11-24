@@ -143,8 +143,8 @@ export default async function DebugContent({
                 <header className="mb-6">
                     <h1 className="text-2xl font-bold">Lead Debug View</h1>
                     <p className="text-sm text-slate-600">
-                        Latest {leads.length} leads · contact info masked · times in
-                        Pacific
+                        Latest {leads.length} leads · Contact Info Masked · Times in
+                        PST
                     </p>
                 </header>
 
